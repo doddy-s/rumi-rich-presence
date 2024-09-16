@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"sync"
 	"time"
@@ -28,6 +29,8 @@ var (
 	logger *log.Logger
 
 	notificationEnabled bool
+
+	iconAbsolutePath string
 )
 
 func init() {
@@ -46,6 +49,18 @@ func init() {
 		os.Exit(1)
 	}
 	logger = log.New(file, "", log.Ldate|log.Ltime|log.Lshortfile)
+
+	ex, err := os.Executable()
+	if err != nil {
+		panic(err)
+	}
+	iconAbsolutePath = filepath.Dir(ex) + "\\rumi-icon.jpg"
+}
+
+func rumiTellsYou(msg string) {
+	if notificationEnabled {
+		notify.Notify("Rumi", "Rumi Tells You", msg, iconAbsolutePath)
+	}
 }
 
 func resetInactivityTimer() {
@@ -64,9 +79,7 @@ func resetInactivityTimer() {
 		client.Logout()
 		isLoggedIn = false
 		activityStart = time.Time{}
-		if notificationEnabled {
-			notify.Notify("Rumi", "Notification", "You have been logged out due to inactivity", "")
-		}
+		rumiTellsYou("No activity in " + strconv.Itoa(inactivityTime) + " second. Rich presence turned off.")
 	})
 }
 
@@ -90,21 +103,20 @@ func startWatching(res http.ResponseWriter, req *http.Request) {
 	image := req.URL.Query().Get("image")
 
 	if title == "" || number == "" || image == "" {
-		response([]byte(`{"message": "Where are the parameters?"}`), http.StatusBadRequest, res)
+		response([]byte(`{"message": "Where are the parameters?", "statusCode": 400}`), http.StatusBadRequest, res)
 		return
 	}
 
 	if title == prevTitle && number == prevNumber && image == prevImage {
 		logger.Println("No changes in activity, skipping update.")
-		response([]byte(`{"message": "No changes, skipping update"}`), http.StatusOK, res)
+		resetInactivityTimer()
+		response([]byte(`{"message": "No changes, skipping update", "statusCode": 200}`), http.StatusOK, res)
 		return
 	}
 
 	logger.Printf("SetActivity with value=%s, %s, %s\n", title, number, image)
 
-	if notificationEnabled {
-		notify.Notify("Rumi", "Notification", "You are now watching "+title, "")
-	}
+	rumiTellsYou("You are now watching " + title)
 
 	if activityStart.IsZero() {
 		activityStart = time.Now()
@@ -138,23 +150,22 @@ func startWatching(res http.ResponseWriter, req *http.Request) {
 
 	resetInactivityTimer()
 
-	response([]byte(`{"message": "Activity set"}`), http.StatusOK, res)
+	response([]byte(`{"message": "Activity set", "statusCode": 200}`), http.StatusOK, res)
 }
 
 func stopWatching(res http.ResponseWriter, req *http.Request) {
 	enableCORS(res)
 
-	if notificationEnabled {
-		notify.Notify("Rumi", "Notification", "You are now stop watching", "")
-	}
+	rumiTellsYou("You are now stop watching")
+
 	client.Logout()
-	response([]byte(`{"message": "Success"}`), http.StatusOK, res)
+	response([]byte(`{"message": "Success", "statusCode": 200}`), http.StatusOK, res)
 }
 
 func main() {
 	http.HandleFunc("/", func(res http.ResponseWriter, req *http.Request) {
 		enableCORS(res)
-		message := []byte(`{"message": "Server up and running"}`)
+		message := []byte(`{"message": "Rumi Rich Presence up and running", "statusCode": 200}`)
 		response(message, http.StatusOK, res)
 	})
 
